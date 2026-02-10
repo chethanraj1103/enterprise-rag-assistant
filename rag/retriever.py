@@ -1,42 +1,33 @@
-import faiss
 import pickle
+import faiss
+import numpy as np
 import os
-from sentence_transformers import SentenceTransformer
+from openai import OpenAI
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 INDEX_PATH = "index/faiss.index"
 META_PATH = "index/meta.pkl"
 
-model = SentenceTransformer(MODEL_NAME)
-index = None
-chunks = []
-meta = []
+index = faiss.read_index(INDEX_PATH)
+with open(META_PATH, "rb") as f:
+    store = pickle.load(f)
 
-def load_index():
-    global index, chunks, meta
-    if os.path.exists(INDEX_PATH) and os.path.exists(META_PATH):
-        index = faiss.read_index(INDEX_PATH)
-        with open(META_PATH, "rb") as f:
-            store = pickle.load(f)
-        chunks = store["chunks"]
-        meta = store["meta"]
-        return True
-    return False
+def embed_query(q):
+    resp = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=[q]
+    )
+    return np.array([resp.data[0].embedding]).astype("float32")
 
-def retrieve(query, k=3):
-    global index, chunks, meta
-    if index is None:
-        ok = load_index()
-        if not ok:
-            return []
-
-    q_emb = model.encode([query], convert_to_numpy=True)
+def retrieve(query, k=4):
+    q_emb = embed_query(query)
     D, I = index.search(q_emb, k)
 
     results = []
     for idx in I[0]:
         results.append({
-            "text": chunks[idx],
-            "source": meta[idx]["source"]
+            "text": store["chunks"][idx],
+            "source": store["meta"][idx]["source"]
         })
     return results

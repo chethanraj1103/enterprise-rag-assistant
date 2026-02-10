@@ -1,51 +1,49 @@
-from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
-import faiss
 import os
 import pickle
+import faiss
 import numpy as np
+from pypdf import PdfReader
+from openai import OpenAI
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 INDEX_PATH = "index/faiss.index"
 META_PATH = "index/meta.pkl"
 
-def chunk_text(text, chunk_size=500, overlap=50):
+def chunk_text(text, size=800, overlap=100):
     chunks = []
     start = 0
     while start < len(text):
-        end = start + chunk_size
+        end = start + size
         chunks.append(text[start:end])
-        start = end - overlap
+        start += size - overlap
     return chunks
 
-def ingest_pdfs(data_dir="data"):
-    model = SentenceTransformer(MODEL_NAME)
+def embed_texts(texts):
+    resp = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=texts
+    )
+    return np.array([d.embedding for d in resp.data]).astype("float32")
 
+def ingest_pdfs(data_dir="data"):
     all_chunks = []
     metadata = []
 
-    if not os.path.exists(data_dir):
-        raise ValueError("data/ folder not found. Create it and add PDFs.")
+    for fname in os.listdir(data_dir):
+        if not fname.lower().endswith(".pdf"):
+            continue
 
-    for file in os.listdir(data_dir):
-        if file.endswith(".pdf"):
-            reader = PdfReader(os.path.join(data_dir, file))
-            text = " ".join(page.extract_text() or "" for page in reader.pages)
+        reader = PdfReader(os.path.join(data_dir, fname))
+        full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        chunks = chunk_text(full_text)
 
-            if not text.strip():
-                print(f"[WARN] No extractable text in {file}, skipping.")
-                continue
+        all_chunks.extend(chunks)
+        metadata.extend([{"source": fname}] * len(chunks))
 
-            chunks = chunk_text(text)
-            for c in chunks:
-                all_chunks.append(c)
-                metadata.append({"source": file})
-
-    if len(all_chunks) == 0:
-        raise ValueError("No text chunks found. Add a text-based PDF to data/.")
-
-    embeddings = model.encode(all_chunks, convert_to_numpy=True)
+    embeddings = embed_texts(all_chunks)
     dim = embeddings.shape[1]
+
     index = faiss.IndexFlatL2(dim)
     index.add(embeddings)
 
