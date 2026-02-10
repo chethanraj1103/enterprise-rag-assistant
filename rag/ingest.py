@@ -21,7 +21,7 @@ def chunk_text(text, size=800, overlap=100):
     return chunks
 
 def embed_texts(texts):
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    headers = {"Authorization": f"Bearer {os.getenv('HF_TOKEN')}"}
     embeddings = []
 
     for t in texts:
@@ -31,10 +31,17 @@ def embed_texts(texts):
             json={"inputs": t},
             timeout=60
         )
-        emb = np.array(r.json()).mean(axis=0)
-        embeddings.append(emb)
+
+        data = r.json()
+
+        if not isinstance(data, list) or len(data) == 0:
+            raise RuntimeError(f"Embedding failed. HF response: {data}")
+
+        vec = np.array(data).mean(axis=0)
+        embeddings.append(vec)
 
     return np.array(embeddings).astype("float32")
+
 
 def ingest_pdfs(data_dir="data"):
     all_chunks = []
