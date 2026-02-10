@@ -6,4 +6,4 @@ faiss-cpu
 numpy
 jinja2
 groq
-openai
+httpx
