@@ -1,7 +1,7 @@
+import os
 import pickle
 import faiss
 import numpy as np
-import os
 import httpx
 
 HF_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -10,9 +10,19 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 INDEX_PATH = "index/faiss.index"
 META_PATH = "index/meta.pkl"
 
-index = faiss.read_index(INDEX_PATH)
-with open(META_PATH, "rb") as f:
-    store = pickle.load(f)
+index = None
+store = None
+
+def load_index():
+    global index, store
+    if index is None:
+        if not os.path.exists(INDEX_PATH) or not os.path.exists(META_PATH):
+            return False
+
+        index = faiss.read_index(INDEX_PATH)
+        with open(META_PATH, "rb") as f:
+            store = pickle.load(f)
+    return True
 
 def embed_query(q):
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
@@ -26,6 +36,9 @@ def embed_query(q):
     return np.array([emb]).astype("float32")
 
 def retrieve(query, k=4):
+    if not load_index():
+        raise RuntimeError("Index not created yet. Upload a document first.")
+
     q_emb = embed_query(query)
     D, I = index.search(q_emb, k)
 
